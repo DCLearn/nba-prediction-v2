@@ -8,3 +8,5 @@ A short explanation of each file:
 2025 May NBA stuff testing XGBoost.R tests XGBoost with varying parameters trained on 2023 NBA data to predict 2024 teams' success. (unsuccessful)
 
 2025 June NBA stuff testing Neural N.R tests multiple models and methods of variable selection (Principal Component Analysis, Linear Discriminat Analysis, forward selection, Generalized Linear Model, Neural Nets, ridge, lasso, elastic net) trained on 2023 NBA data to predict 2024 teams' success.
+
+2025 June NBA stuff paired testing.R tests the differences in the means between the simulated and actual team stats using the paired t.test
