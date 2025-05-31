@@ -33,6 +33,7 @@ the.lineups = c("starter.names", "bench.names", "third.names")
 
 sample.touch.ranges =c()
 
+#select the number of touches associated with each level of offense
 for (k in 1:length(all.names)){
   a=starter.touch.ranges[1,k]
   b=starter.touch.ranges[2,k]
@@ -40,7 +41,10 @@ for (k in 1:length(all.names)){
   sample.touch.ranges = c(sample.touch.ranges, j)
 }
 
+# names of all players
 index=as.data.frame(nba_playerindex(season = year_to_season(most_recent_nba_season() - 1)))
+
+#remove unusual characters and put names together
 
 index$PlayerIndex.PLAYER_FIRST_NAME = stri_trans_general(str = index$PlayerIndex.PLAYER_FIRST_NAME, id = "Latin-ASCII")
 index$PlayerIndex.PLAYER_LAST_NAME = stri_trans_general(str = index$PlayerIndex.PLAYER_LAST_NAME, id = "Latin-ASCII")
@@ -55,13 +59,13 @@ per.touch.sd = data.frame(matrix(nrow=18, ncol=0))
 player.sim.gamelog.TFdf = data.frame(matrix(nrow = 82, ncol = length(all.names)))
 player.sim.gamelog.touches = data.frame(matrix(nrow = 82, ncol = length(all.names)))
 
-#all player stats
+#all players id numbers
 for (k in 1:length(all.names)){
   j = as.character(all.names[k])
   player.row = c(player.row, index$PlayerIndex.PERSON_ID[grep(j,index$Player.Names,ignore.case = TRUE)])
 }
 
-
+#for the constantly breaking API
 try_function=function(func){
   attempt = 1
   variable = NULL
@@ -73,20 +77,22 @@ try_function=function(func){
   return(variable)
 }
 
+#work in batches of each lineup to prevent the API from breaking
 for (lineup in 1:length(the.lineups)){
   this.lineup = (eval(as.name(the.lineups[lineup])))
   message("This lineup: ", this.lineup)
   for (this.player in 1:length(this.lineup)){
-    i=match((this.lineup[this.player]),all.names) #better match the 15 length vector system
-    message("This player: ", this.lineup[this.player], " number: ", i)
+    i=match((this.lineup[this.player]),all.names) #better match the original 15 length vector system without major changes
+    message("This player: ", this.lineup[this.player], " number: ", i) #track progress
     
+    #pull the number of ganes the player has played and their 2023 season game log
     tryCatch({
     player.idnum = as.numeric(player.row[i])
     
     games.played=try_function(as.vector(nba_playercareerstats(player_id = player.idnum)$SeasonTotalsRegularSeason$GP))
-    
     player.gamelog= try_function(nba_playergamelog(player_id = player.idnum, season = 2023)$PlayerGameLog)
     
+    #split away and home games processing because they use different conventions
     away.games=player.gamelog$Game_ID[grepl("@", player.gamelog$MATCHUP, fixed=TRUE)]
     home.games=player.gamelog$Game_ID[grepl("vs", player.gamelog$MATCHUP, fixed=TRUE)]
     
@@ -94,7 +100,8 @@ for (lineup in 1:length(the.lineups)){
     h.touches=c()
     
     message("First step data retrieval for this player: ", this.lineup[this.player], " number:", i, " completed")
-  
+    
+    #retrieve traditional box score and tracking box score. use tracking box score to find player touches
     for (l in 1:length(home.games)){
       tryCatch({
       j=home.games[l]
@@ -126,6 +133,7 @@ for (lineup in 1:length(the.lineups)){
     }
     message("Away data retrieval for this player: ", this.lineup[this.player], " number:", i, "completed")
     
+    #combine total touches to determine average touches and then determine mean and standard deviation touch per stat
     all.stats=rbind(a.games, h.games)
     avg.touches=mean(c(h.touches, a.touches))
     this.per.touch.stat =colMeans(all.stats)/avg.touches
@@ -134,24 +142,24 @@ for (lineup in 1:length(the.lineups)){
     per.touch.sd = cbind(per.touch.sd, this.per.touch.sd)
     
     message("Per touch stats compilation for this player: ", this.lineup[this.player], " number:", i, "completed")
-     
-    starters.gp = c(starters.gp,as.numeric(sample(games.played,1)))
-    # 
-    # all.starters.sim.stats = cbind(all.starters.sim.stats, as.data.frame(per.game.avg))
-    # all.starters.sim.sd = cbind(all.starters.sim.sd, as.data.frame(per.game.sd))
+    #pick the number of games played in simulated season data
+    starters.gp = c(starters.gp,as.numeric(sample(games.played,1))) 
     
+    #the first nine players play directly from their availability
     if (i < 10 ) {
       player.sim.gamelog.TF = vector(mode="numeric",length = 82)
       player.sim.gamelog.TF[sample(1:82, starters.gp[i])] = as.numeric(i)
       player.sim.gamelog.TFdf[i] = player.sim.gamelog.TF
-    }else{
+    }else{ 
       player.sim.gamelog.TFdf[i] = vector(mode="numeric",length = 82)
       
-      ?vector
+      #players 10+ are considered deep bench and mostly player when better players are unavailable
     }
     }, error=function(e){})
   }
 }
+
+#shift the touch distribution up every time a top 9 player is unable to play in a game
 
 for (i in 1:82){
   games.playing = player.sim.gamelog.TFdf[i,]
@@ -177,6 +185,8 @@ for (i in 1:82){
 ball.starters.sim.stats = data.frame(matrix(nrow=18, ncol=0))
 ball.starters.sim.sd = data.frame(matrix(nrow=18, ncol=0))
 
+#transform the offensive levels touch number into actual stats using the per touch stats
+
 for (i in 1:length(per.touch.stat)){
   tryCatch({
   ample.touch.ranges = c(0, sample.touch.ranges)
@@ -197,7 +207,6 @@ for (i in 1:length(ball.starters.sim.stats)){
 
 team.avg.stats = rowSums(team.total.stats)/82
 
-team.avg.stats
 #sim 2023-2024 Magic = FGM:40.954748, FGA:90.412735, FG%:0.4529754, 3PM:14.1628321, 3PA:39.7791150,
   #3P%:0.3560369, FTM:18.3166863, FTA:24.2859413, FT%:0.7542094, ORB:9.3705479, DRB:  32.0935348, TRB: 41.4640826,
   #AST: 28.0112592, STL:9.0147976, BLK:4.8095072, TOV:14.2896383, PF: 21.5426214, PTS: 114.3890139                   
@@ -218,7 +227,9 @@ team.avg.stats[3] = team.avg.stats[1]/team.avg.stats[2]
 team.avg.stats[6] = team.avg.stats[4]/team.avg.stats[5]
 team.avg.stats[9] = team.avg.stats[7]/team.avg.stats[8]
 
-team.avg.stats
+print(team.avg.stats)
+
+#now create the simulated game log
 
 total.sim.gamelog = data.frame(matrix(nrow = 82, ncol = 18))
 colnames(total.sim.gamelog) =  row.names(team.total.stats)
@@ -231,6 +242,7 @@ for (k in 1:length(row.names(team.total.stats))){
     sddf = per.touch.sd[k,l]
     tryCatch({
     per.touch.guess = rnormTrunc(n = 82, mean = meandf, sd = sddf, min = 0, max = meandf+0.4*sddf)
+    #use a restricted normal distribution to avoid both negative and inflated values
     }, error=function(e){})
     j.sum=player.sim.gamelog.touches[l]*(per.touch.guess)
     k.sum = k.sum + j.sum  
@@ -238,7 +250,7 @@ for (k in 1:length(row.names(team.total.stats))){
   total.sim.gamelog[,k] = k.sum
 }
 
-
+#round to whole numbers, then calculate the decimals
 total.sim.gamelog[-c(3,6,9)] = round(total.sim.gamelog[-c(3,6,9)],0)
 
 total.sim.gamelog[3] = total.sim.gamelog[1]/total.sim.gamelog[2]
@@ -264,6 +276,7 @@ for (i in (1:82)){
   }, error=function(e){})
 }
 
+#create the training data from 2023 season data
 training.set=data.frame(matrix(ncol=length(data.frame(nba_teamgamelog(season=2023, team_id = team.id))),nrow=0))
 colnames(training.set)=c("GAME_ID","TEAM_ID","TEAM_NAME","TEAM_ABBREVIATION","TEAM_CITY","MIN",
                          "FGM","FGA","FG_PCT","FG3M","FG3A","FG3_PCT", "FTM","FTA" ,"FT_PCT" ,"OREB" ,
@@ -291,6 +304,7 @@ for (i in unique.game.id){
   WL.set = rbind(gamie, WL.set)
 }
 
+#format the training data correctly
 WL.set=WL.set[-c(2,29,32)]
 
 WL.set=na.omit(WL.set)
@@ -298,6 +312,7 @@ WL.set$team1.TeamGameLog.WL = ifelse(WL.set$team1.TeamGameLog.WL=="W", 1, 0)
 WL.set$team1.TeamGameLog.WL = as.factor(WL.set$team1.TeamGameLog.WL)
 WL.set = WL.set[-c(1,2,3,5,6,7,8,27,28,29,30,31,32,33)]
 
+#format the simulated data correctly 
 sim.opp.stats=sim.opp.stats[-c(1,2,3,4,5,6,25)]
 fake.sim.opp.stats=(na.omit(rbind(sim.opp.stats,sim.opp.stats,sim.opp.stats,sim.opp.stats[1:10,])))
 sim.all.games = cbind(total.sim.gamelog,fake.sim.opp.stats[1:82,])
@@ -306,6 +321,7 @@ sim.all.games=na.omit(sim.all.games)
 
 WL.set[2:37]=data.matrix(lapply(WL.set[2:37],as.numeric))
 
+#run both models and print their predictions 
 NNmodel = neuralnet(team1.TeamGameLog.WL~.,
                     data=WL.set,
                     hidden=c(30, 16, 6),
